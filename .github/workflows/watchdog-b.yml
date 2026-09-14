@@ -23,6 +23,7 @@ env:
   STALE_MIN: '45'
   VPS_NAME: vpshamid1-svg
   SUCCESSOR_TOKEN: ${{ secrets.SUCCESSOR_TOKEN || secrets.PERSIST_TOKEN || '' }}
+  SERVER_ENABLED: ${{ vars.SERVER_ENABLED || 'true' }}
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:

@@ -1,0 +1,39 @@
+name: watchdog-d
+
+# نگهبان «همیشه فعال» — زمان‌بند D (دقیقه‌های ۷،۱۷،۲۷،۳۷،۴۷،۵۷).
+# چهار زمان‌بند (A: /10، B: 5,15,...، C: 2,12,...، D: 7,17,...) با هم یک تیک
+# تقریباً هر ۲-۳ دقیقه می‌سازند و تأخیرهای زمان‌بند گیت‌هاب را هم جبران می‌کنند.
+# منطق دقیقاً همان .github/scripts/watchdog.sh است و در همان concurrency group
+# اجرا می‌شود، پس هرگز همزمان با سایر نگهبان‌ها دیسپچ دوتایی انجام نمی‌دهد.
+on:
+  schedule:
+    - cron: '7,17,27,37,47,57 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: watchdog-keepalive
+  cancel-in-progress: false
+
+env:
+  REPO: ${{ github.repository }}
+  STATE_REPO: ${{ github.repository }}-state
+  STATE_TAG: state
+  STALE_MIN: '45'
+  VPS_NAME: vpshamid1-svg
+  SUCCESSOR_TOKEN: ${{ secrets.SUCCESSOR_TOKEN || secrets.PERSIST_TOKEN || '' }}
+  SERVER_ENABLED: ${{ vars.SERVER_ENABLED || 'true' }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  ensure-running:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: "watchdog-d: keep a main.yml run alive"
+        shell: bash
+        run: bash .github/scripts/watchdog.sh

@@ -1,0 +1,40 @@
+name: watchdog-c
+
+# نگهبان «همیشه فعال» — زمان‌بند C (دقیقه‌های ۲،۱۲،۲۲،۳۲،۴۲،۵۲).
+# هدف: کاهش فاصله‌ی تیک‌های نگهبان به ~۲-۳ دقیقه (به‌جای ۵-۱۰ دقیقه) تا اگر
+# زنجیره‌ی جانشین و بازیابی فوری (قدم Auto-recover در main.yml) هر دو شکست
+# خوردند، خیلی زود یک رانر روشن شود.
+# منطق دقیقاً همان .github/scripts/watchdog.sh است و در همان concurrency group
+# اجرا می‌شود، پس هرگز همزمان با سایر نگهبان‌ها دیسپچ دوتایی انجام نمی‌دهد.
+on:
+  schedule:
+    - cron: '2,12,22,32,42,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: watchdog-keepalive
+  cancel-in-progress: false
+
+env:
+  REPO: ${{ github.repository }}
+  STATE_REPO: ${{ github.repository }}-state
+  STATE_TAG: state
+  STALE_MIN: '45'
+  VPS_NAME: vpshamid1-svg
+  SUCCESSOR_TOKEN: ${{ secrets.SUCCESSOR_TOKEN || secrets.PERSIST_TOKEN || '' }}
+  SERVER_ENABLED: ${{ vars.SERVER_ENABLED || 'true' }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  ensure-running:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: "watchdog-c: keep a main.yml run alive"
+        shell: bash
+        run: bash .github/scripts/watchdog.sh

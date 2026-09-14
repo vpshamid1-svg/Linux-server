@@ -13,6 +13,7 @@ STATE_REPO="${STATE_REPO:-${REPO}-state}"
 STATE_TAG="${STATE_TAG:-state}"
 STALE_MIN="${STALE_MIN:-45}"
 VPS_NAME="${VPS_NAME:-$(basename "$REPO")}"
+SERVER_ENABLED="${SERVER_ENABLED:-true}"
 MAIN_PATH=".github/workflows/main.yml"
 API="https://api.github.com"
 MARKER_PATH=".wd-state.json"
@@ -96,6 +97,10 @@ elif [ "$live" -gt 0 ]; then
   if [ "$age_min" -ge 0 ] && [ "$age_min" -gt "$STALE_MIN" ]; then
     STATE=down; REASON="state ${age_min} دقیقه است آپلود نشده"
   fi
+elif [ "$SERVER_ENABLED" != "true" ]; then
+  # v7.1: خاموش‌سازی عمدی توسط کاربر (Variables ریپو) — نگهبان چیزی را روشن نمی‌کند.
+  echo "[watchdog] SERVER_ENABLED=false — auto-start disabled (deliberate stop); nothing to do"
+  exit 0
 else
   STATE=down; REASON="رانی زنده نبود؛ خودکار روشن شد"
   code=$(api "$TOK" -X POST -o /tmp/resp.json -w '%{http_code}' -d '{"ref":"main"}' \

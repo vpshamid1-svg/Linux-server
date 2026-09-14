@@ -96,6 +96,9 @@ jobs:
       PROBE_ENABLED: ${{ inputs.probe || 'false' }}
       SS_SELFTEST: ${{ inputs.selftest || 'true' }}
       PROVISION_ENABLED: ${{ inputs.provision || 'true' }}
+      # v7.1: کلید خاموش‌سازی عمدی. مقدار 'false' (در Variables ریپو) یعنی هیچ رانری
+      # دوباره روشن نشود — برای وقتی که خودتان سرور را خاموش می‌کنید.
+      SERVER_ENABLED: ${{ vars.SERVER_ENABLED || 'true' }}
 
     steps:
       - name: Checkout repository
@@ -454,6 +457,8 @@ jobs:
             SUCCESSOR_DISPATCHED=1
             echo "[successor] short test run (lifetime<60) — successor dispatch disabled"
           fi
+          # v7.1: انتقال وضعیت به قدم‌های بعدی (قدم«بازیابی خودکار» تصمیم می‌گیرد)
+          echo "SUCCESSOR_DISPATCHED=${SUCCESSOR_DISPATCHED}" >> "$GITHUB_ENV"
           while :; do
             NOW=$(date +%s)
             if [ "$NOW" -ge "$END_TS" ]; then
@@ -461,6 +466,7 @@ jobs:
             fi
             if [ "$SUCCESSOR_DISPATCHED" -eq 0 ] && [ "$NOW" -ge "$SUCCESSOR_AT" ]; then
               SUCCESSOR_DISPATCHED=1
+              echo "SUCCESSOR_DISPATCHED=1" >> "$GITHUB_ENV"
               echo "[successor] lifetime ends in <20min — dispatching replacement run (v6.9 early)..."
               if dispatch_successor; then
                 echo "[successor] replacement dispatched OK — new run should be pending/in_progress now, will take over after final save"
@@ -526,6 +532,49 @@ jobs:
             exit 1
           fi
 
+
+      - name: Auto-recover — immediate replacement if this run ended unexpectedly
+        # v7.1: سریع‌ترین لایه‌ی محافظت. اگر این ران به‌دلیل خطا/کنسل/تایم‌اوت تمام شده باشد،
+        # همان لحظه (ثانیه‌ها، نه دقیقه‌ها) یک رانر جانشین dispatch می‌شود — قبل از اینکه
+        # نگهبان‌های زمان‌بند (هر ۲-۳ دقیقه) اصلاً تیک بخورند.
+        # در پایان طبیعیِ عمر، خودِ قدم keepalive جانشین را ساخته و این قدم کاری نمی‌کند.
+        if: always() && env.SERVER_ENABLED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "[recover] run_id=${GITHUB_RUN_ID} successor_dispatched=${SUCCESSOR_DISPATCHED:-0}"
+          if [ "${SUCCESSOR_DISPATCHED:-0}" = "1" ]; then
+            echo "[recover] successor already dispatched by keepalive — nothing to do"
+            exit 0
+          fi
+          API="https://api.github.com"
+          count_runs() {
+            curl -s --max-time 20 -H "Authorization: Bearer ${GH_TOKEN}" \
+                 -H "Accept: application/vnd.github+json" \
+                 "${API}/repos/${GITHUB_REPOSITORY}/actions/workflows/main.yml/runs?status=$1&per_page=30" \
+              | jq --argjson me "${GITHUB_RUN_ID}" '[.workflow_runs[] | select(.id != $me)] | length' 2>/dev/null || echo 0
+          }
+          LIVE=$(count_runs in_progress)
+          QUEUED=$(count_runs queued)
+          WAITING=$(count_runs waiting)
+          echo "[recover] other runs: live=${LIVE} queued=${QUEUED} waiting=${WAITING}"
+          if [ "${LIVE:-0}" -gt 0 ] || [ "${QUEUED:-0}" -gt 0 ] || [ "${WAITING:-0}" -gt 0 ]; then
+            echo "[recover] another run already covers the server — skipping dispatch"
+            exit 0
+          fi
+          CODE=$(curl -s -o /tmp/recover.json -w '%{http_code}' --max-time 30 -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+            "${API}/repos/${GITHUB_REPOSITORY}/actions/workflows/main.yml/dispatches" \
+            -d '{"ref":"main","inputs":{"lifetime_min":"350"}}' || echo 000)
+          echo "[recover] dispatch HTTP=${CODE}"
+          if [ "$CODE" = "204" ]; then
+            echo "[recover] ✅ replacement dispatched immediately (server downtime = seconds)"
+          else
+            echo "[recover] WARNING: immediate dispatch failed — watchdog (every 2-3 min) is backstop"
+            bash .github/scripts/notify.sh --type server --stage auto-recover \
+              --error "Immediate replacement dispatch failed (http=${CODE}); watchdog will retry." || true
+          fi
+          exit 0
 
       - name: Notify on job failure (active failure notification)
         if: always() && job.status == 'failure'
