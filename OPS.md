@@ -1,0 +1,63 @@
+# OPS — راهنمای عملیاتی سرور (v7.0 — نسخه‌ی پاک)
+
+> چرخه عادی: هر Run ~۳۵۰ دقیقه؛ ۲۰ دقیقه قبل از پایان، خودِ Run جانشین را dispatch می‌کند.
+> تیک ساعته کرون فقط backstop است. قطعی هر دست‌به‌دست‌سازی = چند دقیقه (بوت + بازیابی state).
+
+## ۱) کارهای روزمره
+- **وضعیت سریع:** Actions ← آخرین Run باید `in_progress` و قدم `Keep server alive` باشد.
+- **جایگزینی دستی (ریبیلد):** Actions ← Run workflow (`lifetime_min` پیش‌فرض ۳۵۰).
+- **تست سریع:** Run workflow با `lifetime_min=3` (رانر تست؛ زیر ۴ دقیقه می‌ماند و جانشین dispatch نمی‌کند).
+- **خاموش کردن کامل:** کنسل Run فعال + Disable ورکفلو (وگرنه کرون ساعته دوباره روشنش می‌کند).
+- **وصل SSH:** `ssh root@<IP-ثابت>` با رمز `HAMID_PASSWORD` (نیازی به کلید نیست).
+- **چک سلامت از بیرون:** ورکفلو `ops-server-check` (وضعیت نود در tailnet + سرویس‌ها روی سرور).
+
+## ۲) قرارداد ایجنت
+- اگر `/root/agent-autostart.sh` موجود باشد، آخر هر بوت با **root** اجرا می‌شود (غیرfatal؛ لاگ `/var/log/agent-autostart.log`).
+- باید **idempotent** و سریع باشد؛ کار طولانی را به background بسپارد.
+- فقط مسیرهای `persist.list` بین ریبیلدها می‌مانند → workspace را زیر `/root` یا `/home/Hamid` نگه دار.
+- کلیدهای API فقط از طریق **GitHub Secrets** (env)؛ هرگز در فایل/آرشیو.
+
+## ۳) کلیدها و توکن‌ها
+| مورد | کجا | وضعیت/چرخه |
+|---|---|---|
+| Tailscale Auth Key | Secret `TAILSCALE_AUTH_KEY` | ۹۰ روزه. **باید non-ephemeral باشد** وگرنه نود بعد از قطعی حذف و IP عوض می‌شود. ساخت: `POST /api/v2/tailnet/-/keys` با `capabilities.devices.create {reusable:true, ephemeral:false, preauthorized:true}` |
+| Tailscale API Token | Secret `TAILSCALE_API_TOKEN` | زمان‌دار؛ تاریخ انقضا در `key-dates.json`. بدون آن: pin IP + پاکسازی نود یتیم غیرفعال می‌شود (بوت نمی‌شکند) |
+| PAT | Secret `PERSIST_TOKEN` | دسترسی به ریپوی state + fallback دیسپچ (زنجیره با `GITHUB_TOKEN` خود ران کار می‌کند) |
+| رمز سرور | Secret `HAMID_PASSWORD` | برای `root` و `Hamid`؛ در هر بوت اعمال می‌شود |
+| `.github/key-dates.json` | داخل ریپو | با هر تعویض توکن به‌روز شود (هر بوت چک می‌شود) |
+
+## ۴) 3x-ui
+- پیش‌فرض نصب نمی‌شود. برای نصب: Run workflow با `install_xui=true` (نصب خام، بدون کانفیگ).
+- ماندگاری: `/usr/local/x-ui` + `/etc/x-ui` در `persist.list`؛ دیتابیس `x-ui.db` با snapshot سازگار.
+- برای حذف: داخل سرور `x-ui uninstall`.
+
+## ۵) خرابی‌های رایج
+| علامت | واکنش |
+|---|---|
+| قدم بوت قرمز | لاگ همان قدم؛ معمولاً گذراست → یک Run دستی جدید |
+| dispatch جانشین شکست (لاگ `[successor]`) | Run جدید دستی بزن؛ سلامت توکن‌ها را چک کن؛ کرون ساعته backstop است |
+| نود تیل‌اسکیل آفلاین >۱۵ دقیقه | وسط ریبیلد؟ اگر نه: Run فعلی را چک کن (قدم Setup Tailscale) |
+| **IP سرور عوض شده** | بررسی کن auth key غیر-ephemeral باشد و `/var/lib/tailscale` در state باشد؛ مقدار `TAILSCALE_FIXED_IP` را هم چک کن |
+| ورود SSH با رمز کار نکرد | قدم `SSH local self-test` را ببین؛ `HAMID_PASSWORD` ست شده باشد و `sshd_config` دارای `PasswordAuthentication yes` باشد |
+| داده‌ی برنامه‌ای بعد از ریبیلد نماند | مسیر آن در `.github/scripts/persist.list` نیست → اضافه کن |
+
+## ۶) ⚠️ Billing (مهم‌ترین ریسک عملیاتی)
+- ریپو **public** + اکانت **Free** = **۲۰۰۰ دقیقه رایگان/ماه**.
+- مصرف ≈ **۱۴۵۰ دقیقه/روز** → سقف ماهانه در ~۱.۴ روز پر می‌شود؛ بعدش Runهای جدید تا ریست ماهانه رد می‌شوند → سرور می‌ایستد.
+- پایش: Settings → Billing and plans → Usage → Actions.
+
+## ۷) بکاپ
+- کد: `git clone https://github.com/vpshamid1-svg/Linux-server`
+- state: ریپوی private `Linux-server-state`؛ **۲ اسنپ‌شات آخر** روی Release با تگ `state`:
+```bash
+curl -s -H "Authorization: Bearer $PAT" \
+  "https://api.github.com/repos/vpshamid1-svg/Linux-server-state/releases/tags/state" \
+  | python3 -c "import json,sys; [print(a['name'], a['size']) for a in json.load(sys.stdin)['assets']]"
+```
+- همیشه یک کلون محلی از هر دو ریپو نگه دار.
+
+## ۸) امنیت
+- سرور فقط از طریق IP خصوصی Tailscale (100.x) در دسترس است.
+- ورود با رمز برای `root` فعال است؛ چون دسترسی فقط از داخل tailnet است ریسکِ brute-force اینترنتی ندارد،
+  اما رمز را قوی نگه دار و در صورت لو رفتن `HAMID_PASSWORD` را عوض کن.
+- لاگ‌ها secret چاپ نمی‌کنند.

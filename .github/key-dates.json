@@ -1,0 +1,6 @@
+{
+  "tailscale_api_token_expires": "2026-12-13",
+  "tailscale_auth_key_expires": "2026-12-13",
+  "persist_pat_expires": "TODO-YYYY-MM-DD",
+  "notes": "نسخه‌ی v7.0 (کپی پاک برای vpshamid1-svg). کلیدهای تلگرام/داشبورد در این نسخه وجود ندارند. Auth key فعلی (ساخته‌شده با API: reusable + NON-ephemeral + preauthorized) تا 2026-12-13 معتبر است؛ non-ephemeral بودن شرط لازم برای ثابت ماندن IP نود است. چون هویت نود (/var/lib/tailscale) داخل state ذخیره می‌شود، بوت‌های بعدی بدون auth key و با همان IP reconnect می‌کنند. API token هم تا 2026-12-13 معتبر است (برای pin کردن IP و حذف نودهای یتیم). برای ساخت auth key جدید: POST /api/v2/tailnet/-/keys با capabilities.devices.create {reusable:true, ephemeral:false, preauthorized:true}."
+}

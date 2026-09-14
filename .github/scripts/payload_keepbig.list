@@ -1,0 +1,12 @@
+# payload_keepbig.list (v7.0)
+# پیشوند مسیرهایی که فایل‌های حجیمِ آن‌ها «داده‌ی کاربر» محسوب می‌شود
+# و نباید به خاطر اندازه از آرشیو حذف شوند.
+# (مسیرهای Hermes/cloudflared/uv حذف شدند — در این نسخه وجود ندارند)
+root
+usr/local/bin
+usr/local/sbin
+usr/local/x-ui
+opt
+srv
+var/lib
+var/opt

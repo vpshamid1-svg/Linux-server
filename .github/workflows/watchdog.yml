@@ -1,0 +1,47 @@
+name: watchdog
+
+# نگهبان «همیشه فعال» — زمان‌بند A (هر ۱۰ دقیقه).
+# منطق در .github/scripts/watchdog.sh است؛ watchdog-b.yml همان را با زمان‌بند دیگری
+# اجرا می‌کند تا تأخیرهای زمان‌بندی گیت‌هاب جبران شود. (هر دو در یک concurrency group)
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: 'یک هشدار تستی ثبت کن (فقط در Step Summary؛ بدون ارسال)'
+        required: false
+        default: 'false'
+      test_dispatch:
+        description: 'تست دیسپچ با GITHUB_TOKEN روی ورک‌فلوی سبک'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: watchdog-keepalive
+  cancel-in-progress: false
+
+env:
+  REPO: ${{ github.repository }}
+  STATE_REPO: ${{ github.repository }}-state
+  STATE_TAG: state
+  STALE_MIN: '45'
+  VPS_NAME: vpshamid1-svg
+  SUCCESSOR_TOKEN: ${{ secrets.SUCCESSOR_TOKEN || secrets.PERSIST_TOKEN || '' }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  TEST_ALERT: ${{ inputs.test_alert || 'false' }}
+  TEST_DISPATCH: ${{ inputs.test_dispatch || 'false' }}
+
+jobs:
+  ensure-running:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: "watchdog: keep a main.yml run alive + alert on stale state"
+        shell: bash
+        run: bash .github/scripts/watchdog.sh
