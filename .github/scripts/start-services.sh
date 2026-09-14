@@ -42,7 +42,23 @@ else
 fi
 
 # --- Tailscale: هویت پایدار (IP ثابت) ---
-systemctl enable tailscaled >/dev/null 2>&1 || true
+# نکته: در اولین بوت، بسته‌ی tailscale هنوز نصب نشده (نصب در قدم بعد انجام
+# می‌شود) — بنابراین نبود آن در اینجا طبیعی است و هشدار محسوب نمی‌شود.
+if ! command -v tailscaled >/dev/null 2>&1; then
+  echo "[services] tailscaled: not installed yet (will be set up in the Tailscale step) — skip"
+elif pgrep -x tailscaled >/dev/null 2>&1; then
+  echo "[services] tailscaled: running"
+else
+  systemctl enable tailscaled >/dev/null 2>&1 || true
+  systemctl start tailscaled >/dev/null 2>&1 || true
+  sleep 2
+  if pgrep -x tailscaled >/dev/null 2>&1; then
+    echo "[services] tailscaled: started"
+  else
+    echo "[services] WARNING: tailscaled failed to start"
+    fail=1
+  fi
+fi
 if ! pgrep -x tailscaled >/dev/null 2>&1; then
   systemctl start tailscaled >/dev/null 2>&1 || true
   sleep 2
