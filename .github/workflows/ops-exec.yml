@@ -12,6 +12,7 @@ jobs:
       TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
       SSH_PASS: ${{ secrets.HAMID_PASSWORD }}
       TARGET_IP: ${{ secrets.TAILSCALE_FIXED_IP }}
+      STAGING_NODE_CHI_TOKEN: ${{ secrets.STAGING_NODE_CHI_TOKEN }}
     steps:
       - name: exec on server
         shell: bash
@@ -20,6 +21,7 @@ jobs:
         run: |
           set -uo pipefail
           echo "::add-mask::$SSH_PASS"
+          echo "::add-mask::$STAGING_NODE_CHI_TOKEN"
           sudo apt-get update -y >/dev/null 2>&1
           DEBIAN_FRONTEND=noninteractive sudo apt-get install -y -o DPkg::Lock::Timeout=120 curl jq sshpass openssh-client >/dev/null 2>&1
           if ! sudo tailscale status --json 2>/dev/null | jq -e '.Self.Online == true' >/dev/null 2>&1; then
@@ -29,6 +31,9 @@ jobs:
           for i in {1..15}; do sudo tailscale status --json 2>/dev/null | jq -e '.Self.Online == true' >/dev/null 2>&1 && break || sleep 2; done
           SSHOPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/kh -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ConnectTimeout=15)
           for i in 1 2 3 4 5; do sshpass -p "$SSH_PASS" ssh "${SSHOPTS[@]}" root@"$TARGET_IP" 'echo SSH_OK' 2>/dev/null | grep -q SSH_OK && break || { echo "wait ssh ($i)"; sleep 5; }; done
+          if [ -n "${STAGING_NODE_CHI_TOKEN:-}" ]; then
+            printf '%s' "$STAGING_NODE_CHI_TOKEN" | sshpass -p "$SSH_PASS" ssh "${SSHOPTS[@]}" root@"$TARGET_IP" 'install -d -m 700 /etc/mrphon3-worker-test && cat > /etc/mrphon3-worker-test/.worker_token && chmod 600 /etc/mrphon3-worker-test/.worker_token'
+          fi
           echo "$CMD_B64" | base64 -d > /tmp/remote.sh
           sshpass -p "$SSH_PASS" ssh "${SSHOPTS[@]}" root@"$TARGET_IP" 'bash -s' < /tmp/remote.sh 2>&1 | tail -120
           echo "=== OPS-EXEC DONE ==="
